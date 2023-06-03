@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Wgpu shader examples</title>
+</head>
+
+<body>
+  <div id="wasm-example"></div>
+  <script type="module">
+    import init from "/pkg/wgpu_shaders.js";
+
+    init().catch((error) => {
+      if (!error.message.startsWith("Using exceptions for control flow,")) {
+        throw error;
+      } else {
+        console.log(`Ignored error: ${error}`)
+      }
+    }).then(() => console.log("WASM loaded"));
+  </script>
+</body>
+
+</html>
