@@ -2,6 +2,11 @@ use anyhow::Context;
 use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
 
+use crate::{
+    camera::{Camera, CameraController, CameraUniform},
+    texture::Texture,
+};
+
 pub(crate) struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -14,7 +19,13 @@ pub(crate) struct State {
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: crate::texture::Texture,
+    diffuse_texture: Texture,
+
+    camera: Camera,
+    camera_controller: CameraController,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -95,9 +106,8 @@ impl State {
         surface.configure(&device, &config);
 
         let diffuse_bytes = include_bytes!("../static/happy-tree.png");
-        let diffuse_texture =
-            crate::texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree")
-                .context("Can't generate texture from given image bytes")?;
+        let diffuse_texture = Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree")
+            .context("Can't generate texture from given image bytes")?;
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -139,6 +149,53 @@ impl State {
             ],
         });
 
+        let camera = Camera {
+            // position the camera one unit up and 2 units back
+            // +z is out of the screen
+            eye: (0.0, 1.0, 2.0).into(),
+            // have it look at the origin
+            target: (0.0, 0.0, 0.0).into(),
+            // which way is "up"
+            up: cgmath::Vector3::unit_y(),
+            aspect: config.width as f32 / config.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
+        let camera_controller = CameraController::new(0.05);
+        let mut camera_uniform = CameraUniform::default();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera-bind-group-layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera-bind-group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex buffer"),
             contents: bytemuck::cast_slice(&crate::vertex::VERTICES),
@@ -158,7 +215,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render pipeline layout"),
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -210,6 +267,12 @@ impl State {
             num_vertices,
             diffuse_bind_group,
             diffuse_texture,
+
+            camera,
+            camera_controller,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
         })
     }
 
@@ -227,12 +290,17 @@ impl State {
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        let _ = event;
-        false
+        self.camera_controller.process_events(event)
     }
 
     pub fn update(&mut self) {
-        // No-op
+        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -265,7 +333,10 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
+
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_vertices, 0, 0..1);
