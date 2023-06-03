@@ -59,6 +59,10 @@ pub async fn run() {
                     },
                 ..
             } => *control_flow = ControlFlow::Exit,
+            WindowEvent::Resized(physical_size) => state.resize(*physical_size),
+            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                state.resize(**new_inner_size)
+            }
             _ => {}
         },
         _ => {}
