@@ -1,3 +1,4 @@
+use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
 
 pub(crate) struct State {
@@ -8,6 +9,8 @@ pub(crate) struct State {
     pub size: winit::dpi::PhysicalSize<u32>,
     window: Window,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl State {
@@ -84,6 +87,14 @@ impl State {
             view_formats: vec![],
         };
 
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex buffer"),
+            contents: bytemuck::cast_slice(&crate::vertex::VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let num_vertices = crate::vertex::VERTICES.len() as u32;
+
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let render_pipeline_layout =
@@ -99,7 +110,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[crate::vertex::Vertex::describe()],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -136,6 +147,8 @@ impl State {
             queue,
             config,
             render_pipeline,
+            vertex_buffer,
+            num_vertices,
         }
     }
 
@@ -191,7 +204,8 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

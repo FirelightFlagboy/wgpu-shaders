@@ -1,4 +1,5 @@
 mod state;
+mod vertex;
 
 use cfg_if::cfg_if;
 #[cfg(target_arch = "wasm32")]
