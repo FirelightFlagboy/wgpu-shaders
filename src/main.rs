@@ -1,3 +1,5 @@
+use wgpu_shaders;
+
 fn main() {
-    println!("Hello, world!");
+    wgpu_shaders::run()
 }
