@@ -1,4 +1,4 @@
-use image::GenericImageView;
+use anyhow::Context;
 use wgpu::util::DeviceExt;
 use winit::{event::WindowEvent, window::Window};
 
@@ -14,10 +14,11 @@ pub(crate) struct State {
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     diffuse_bind_group: wgpu::BindGroup,
+    diffuse_texture: crate::texture::Texture,
 }
 
 impl State {
-    pub async fn new(window: Window) -> Self {
+    pub async fn new(window: Window) -> anyhow::Result<Self> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -31,7 +32,8 @@ impl State {
         //
         // The surface needs to live as long as the window that created it.
         // State owns the windows so this should be safe.
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface =
+            unsafe { instance.create_surface(&window) }.context("Failed to create surface")?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptionsBase {
@@ -40,7 +42,7 @@ impl State {
                 compatible_surface: Some(&surface),
             })
             .await
-            .expect("Can't request a compatible adapter");
+            .context("Can't request a compatible adapter")?;
 
         let adapter_info = adapter.get_info();
 
@@ -66,7 +68,7 @@ impl State {
                 None,
             )
             .await
-            .expect("Can't request a device");
+            .context("Can't request a device")?;
 
         let surface_caps = surface.get_capabilities(&adapter);
 
@@ -78,7 +80,7 @@ impl State {
             .iter()
             .find(|f| f.is_srgb())
             .copied()
-            .expect("Can't find a compatible surface format");
+            .context("Can't find a compatible surface format")?;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -93,57 +95,9 @@ impl State {
         surface.configure(&device, &config);
 
         let diffuse_bytes = include_bytes!("../static/happy-tree.png");
-        let diffuse_image = image::load_from_memory(diffuse_bytes).expect("Invalid image format");
-        let diffuse_rgba = diffuse_image.to_rgba8();
-
-        let dimensions = diffuse_image.dimensions();
-
-        let texture_size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
-            depth_or_array_layers: 1,
-        };
-        let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Diffuse texture"),
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &diffuse_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &diffuse_rgba,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
-            },
-            texture_size,
-        );
-
-        // We don't need to configure the texture view much,
-        // So let's let wgpu define it.
-        let diffuse_texture_view =
-            diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let diffuse_sample = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Diffuse sample"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
+        let diffuse_texture =
+            crate::texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree")
+                .context("Can't generate texture from given image bytes")?;
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -176,11 +130,11 @@ impl State {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_sample),
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
                 },
             ],
         });
@@ -243,7 +197,7 @@ impl State {
             multiview: None,
         });
 
-        Self {
+        Ok(Self {
             surface,
             window,
             size,
@@ -255,7 +209,8 @@ impl State {
             index_buffer,
             num_vertices,
             diffuse_bind_group,
-        }
+            diffuse_texture,
+        })
     }
 
     pub fn window(&self) -> &Window {

@@ -1,4 +1,5 @@
 mod state;
+mod texture;
 mod vertex;
 
 use cfg_if::cfg_if;
@@ -43,7 +44,7 @@ pub async fn run() {
             .expect("Couldn't append canvas to document body");
     }
 
-    let mut state = state::State::new(window).await;
+    let mut state = state::State::new(window).await.expect("Can't create state");
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
