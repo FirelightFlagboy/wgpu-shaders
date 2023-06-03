@@ -12,13 +12,7 @@
   <script type="module">
     import init from "/pkg/wgpu_shaders.js";
 
-    init().catch((error) => {
-      if (!error.message.startsWith("Using exceptions for control flow,")) {
-        throw error;
-      } else {
-        console.log(`Ignored error: ${error}`)
-      }
-    }).then(() => console.log("WASM loaded"));
+    init().then(() => console.log("WASM loaded"));
   </script>
 </body>
 

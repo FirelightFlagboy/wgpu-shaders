@@ -1,3 +1,5 @@
+mod state;
+
 use cfg_if::cfg_if;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -8,7 +10,7 @@ use winit::{
 };
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
-pub fn run() {
+pub async fn run() {
     cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -40,11 +42,13 @@ pub fn run() {
             .expect("Couldn't append canvas to document body");
     }
 
+    let mut state = state::State::new(window).await;
+
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             window_id,
             ref event,
-        } if window_id == window.id() => match event {
+        } if window_id == state.window().id() => match event {
             WindowEvent::CloseRequested
             | WindowEvent::KeyboardInput {
                 input:
