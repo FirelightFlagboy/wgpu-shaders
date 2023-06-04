@@ -21,7 +21,7 @@ pub(crate) struct State {
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: Texture,
+    _diffuse_texture: Texture,
 
     camera: Camera,
     camera_controller: CameraController,
@@ -317,7 +317,7 @@ impl State {
             index_buffer,
             num_vertices,
             diffuse_bind_group,
-            diffuse_texture,
+            _diffuse_texture: diffuse_texture,
 
             camera,
             camera_controller,

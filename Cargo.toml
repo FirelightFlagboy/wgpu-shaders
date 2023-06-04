@@ -1,5 +1,5 @@
 [workspace]
-members = ["wgpu-tuto"]
+members = ["wgpu-tuto", "shadertoy"]
 
 [workspace.dependencies]
 anyhow = "1.0.71"
